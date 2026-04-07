@@ -25,7 +25,9 @@ class UtilityBase {
      * @return The path to the now executable file.
      */
     String copyGlobalLibraryScript(String resourcePath, String destPath = null) {
-        String fileName = new File(resourcePath).getName()
+        String packagePath = this.class.name.replace('.', '/').replaceAll(/\/[^\/]+$/, '')
+        String resolvedResourcePath = "${packagePath}/${resourcePath}"
+        String fileName = new File(resolvedResourcePath).getName()
         String destFile
 
         if (destPath == null) {
@@ -36,7 +38,7 @@ class UtilityBase {
         }
 
         // Create the directory if needed, and write the library content.
-        String content = this.script.libraryResource(resourcePath)
+        String content = this.script.libraryResource(resolvedResourcePath)
         this.script.writeFile(file: destFile, text: content)
         this.script.sh "chmod +x ${destFile}"
 

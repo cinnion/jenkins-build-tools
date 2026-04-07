@@ -71,13 +71,13 @@ class ReportCoverage extends UtilityBase {
             Map settingsJson = callAndReturnJson('readConfigSettings.py')
 
             // Read our values
-            // int linesValid = getCoverageValueAsString(settingsJson.coverageFile, 'lines-valid') as int
-            // int linesCovered = getCoverageValueAsString(settingsJson.coverageFile, 'lines-covered') as int
-            BigDecimal lineRate = getCoverageValueAsString(settingsJson.coverageFile as String, 'line-rate').toBigDecimal()
-            // int branchedValid = getCoverageValueAsString(settingsJson.coverageFile, 'branches-valid') as int
-            // int branchesCovered = getCoverageValueAsString(settingsJson.coverageFile, 'branches-covered') as int
-            BigDecimal branchRate = getCoverageValueAsString(settingsJson.coverageFile as String, 'branch-rate').toBigDecimal()
-            // int complexity = getCoverageValueAsString(settingsJson.coverageFile, 'complexity') as int
+            // int linesValid = getCoverageValueAsString(settingsJson.coverage_file, 'lines-valid') as int
+            // int linesCovered = getCoverageValueAsString(settingsJson.coverage_file, 'lines-covered') as int
+            BigDecimal lineRate = getCoverageValueAsString(settingsJson.coverage_file as String, 'line-rate').toBigDecimal()
+            // int branchedValid = getCoverageValueAsString(settingsJson.coverage_file, 'branches-valid') as int
+            // int branchesCovered = getCoverageValueAsString(settingsJson.coverage_file, 'branches-covered') as int
+            BigDecimal branchRate = getCoverageValueAsString(settingsJson.coverage_file as String, 'branch-rate').toBigDecimal()
+            // int complexity = getCoverageValueAsString(settingsJson.coverage_file, 'complexity') as int
 
             // Set our status to the percentage.
             if (metric == LINE_METRIC) {
