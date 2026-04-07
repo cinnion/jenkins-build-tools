@@ -19,7 +19,7 @@ class ReportCoverage extends UtilityBaseClass {
 
         try {
             value = sh(
-                script "xmllint --xpath 'string(//coverage/@{key})' {coverageFile}",
+                script: "xmllint --xpath 'string(//coverage/@{key})' {coverageFile}",
                 returnStdout: true
             ).trim()
 
