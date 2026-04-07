@@ -1,10 +1,21 @@
+package org.ka8zrt
+
+import groovy.transform.CompileStatic
+import org.jenkinsci.plugins.badge.EmbeddableBadgeConfig
+
 /**
  * A class for parsing a Python coverage XML coverage report and manipulating
  * an embeddable build status badge according to values stored in a
  * pyproject.toml file, which must exist but need not have configuration
  * settings specific to this class.
  */
-class ReportCoverage extends UtilityBaseClass {
+@CompileStatic
+class ReportCoverage extends UtilityBase {
+
+    String lineMetric = 'line'
+    String branchMetric = 'branch'
+    String percentFormat = '%.2f%%'
+    int toPercent = 100
 
     /**
      * Use xmllint to get a specified value from a coverage XML file and
@@ -15,17 +26,17 @@ class ReportCoverage extends UtilityBaseClass {
      *         caller to whatever type is needed.
      */
     static String getCoverageValueAsString(String coverageFile, String key) {
-        def value = ""
+        String value = ''
 
         try {
             value = sh(
-                script: "xmllint --xpath 'string(//coverage/@{key})' {coverageFile}",
+                script: "xmllint --xpath 'string(//coverage/@${key})' ${coverageFile}",
                 returnStdout: true
             ).trim()
 
             return value
-        } except (Exception e) {
-            error("Failed to find {key} in {coverageFile}")
+        } catch (e) {
+            error("Failed to find ${key} in ${coverageFile}")
         }
     }
 
@@ -42,10 +53,10 @@ class ReportCoverage extends UtilityBaseClass {
      *
      * @return Nothing.
      */
-    static void reportCoveragePercent(EmbeddableBadgeConfig badge, String metric = "line") {
+    static void reportCoveragePercent(EmbeddableBadgeConfig badge, String metric = lineMetric) {
         try {
             // Allowed values.
-            def allowedMetrics = ["line", "branch"]
+            String[] allowedMetrics = [lineMetric, branchMetric]
 
             // Validate the metric passed in.
             if (!(metric in allowedMetrics)) {
@@ -53,34 +64,34 @@ class ReportCoverage extends UtilityBaseClass {
             }
 
             // Read our settings.
-            Map settingsJson = callAndReturnJson("readConfigSettings.py")
+            Map settingsJson = callAndReturnJson('readConfigSettings.py')
 
             // Read our values
-            def linesValid = getCoverageValueAsString(settingsJson.coverageFile, "lines-valid") as int
-            def linesCovered = getCoverageValueAsString(settingsJson.coverageFile, "lines-covered") as int
-            def lineRate = getCoverageValueAsString(settingsJson.coverageFile, "line-rate") as Float
-            def branchedValid = getCoverageValueAsString(settingsJson.coverageFile, "branches-valid") as int
-            def branchesCovered = getCoverageValueAsString(settingsJson.coverageFile, "branches-covered") as int
-            def branchRate = getCoverageValueAsString(settingsJson.coverageFile, "branch-rate") as Float
-            def complexity = getCoverageValueAsString(settingsJson.coverageFile, "complexity") as int
+            // int linesValid = getCoverageValueAsString(settingsJson.coverageFile, 'lines-valid') as int
+            // int linesCovered = getCoverageValueAsString(settingsJson.coverageFile, 'lines-covered') as int
+            BigDecimal lineRate = getCoverageValueAsString(settingsJson.coverageFile, 'line-rate').toBigDecimal()
+            // int branchedValid = getCoverageValueAsString(settingsJson.coverageFile, 'branches-valid') as int
+            // int branchesCovered = getCoverageValueAsString(settingsJson.coverageFile, 'branches-covered') as int
+            BigDecimal branchRate = getCoverageValueAsString(settingsJson.coverageFile, 'branch-rate').toBigDecimal()
+            // int complexity = getCoverageValueAsString(settingsJson.coverageFile, 'complexity') as int
 
             // Set our status to the percentage.
-            if (metric == "line") {
-                badge.setStatus(String.format("%.2f%%", lineRate * 100)
+            if (metric == lineMetric) {
+                badge.setStatus(String.format(percentFormat, lineRate * toPercent))
             } else {
-                badge.setStatus(String.format("%.2f%%", branchRate * 100)
+                badge.setStatus(String.format(percentFormat, branchRate * toPercent))
             }
 
             // Look at our lineRate and figure out whether we are warning or failing.
-            if (lineRate * 100 < settingsJson.fail_under) {
+            if (lineRate * toPercent < settingsJson.fail_under) {
                 badge.setColor(settingsJson.fail_color)
-            } else if (lineRate * 100 < settingsJson.warn_under) {
+            } else if (lineRate * toPercent < settingsJson.warn_under) {
                 badge.setColor(settingsJson.warn_color)
             } else {
                 badge.setColor(settingsJson.pass_color)
             }
-        } except (Exception e) {
-            error("An error occurred in reportCoveragePercent - {e}")
+        } catch (e) {
+            error("An error occurred in reportCoveragePercent - ${e}")
         }
     }
 
@@ -107,7 +118,7 @@ class ReportCoverage extends UtilityBaseClass {
      * @return Nothing.
      */
     static void reportCoverageBranchPercent(EmbeddableBadgeConfig badge) {
-        return reportCoveragePercent(badge, "branch")
+        return reportCoveragePercent(badge, branchMetric)
     }
 
 }

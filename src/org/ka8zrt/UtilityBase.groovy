@@ -1,37 +1,40 @@
 package org.ka8zrt
 
+import groovy.transform.CompileStatic
+
 /**
  * A base utility class providing what will likely be some common helper
  * methods.
  */
-abstract class UtilityBaseClass implements Serializable {
-
-    /**
-     * Create a temporary location for holding a script.
-     *
-     * @param path A string representing a file name.
-     * @return A path to a temporary file.
-     */
-    static String createTempLocation(String path) {
-        String tmpDir = pwd tmp: true
-        return tmpDir + File.separator + new File(path).getName()
-    }
+@CompileStatic
+class UtilityBase {
 
     /**
      * Copy a global library script into a temporary location and make it
      * executable.
      *
-     * @param srcPath The source path to the file.
+     * @param resourcePath The resource path to the file.
      * @param destPath Where to put the file, defaulting to null which
      *                 means to put it in a temporary location.
      * @return The path to the now executable file.
      */
-    static String copyGlobalLibraryScript(String srcPath, String destPath = null) {
+    static String copyGlobalLibraryScript(String resourcePath, String destPath = null) {
+        String fileName = new File(resourcePath).getName()
+        String destFile = ''
 
-        destPath = destPath ? createTempLocation(srcPath)
-        writeFile file: destPath, text: libraryResource(srcPath)
-        sh "chmod +x ${destPath}"
-        return destPath
+        if (destPath == null) {
+            String tmpDir = pwd(tmp: true)
+            destFile = "${tmpDir}/${fileName}"
+        } else {
+            destFile = destPath
+        }
+
+        // Create the directory if needed, and write the library content.
+        String content = libraryResource(resourcePath)
+        writeFile(file: destFile, text: content)
+        sh "chmod +x ${destFile}"
+
+        return destFile
     }
 
     /**
@@ -41,12 +44,11 @@ abstract class UtilityBaseClass implements Serializable {
      * @param scriptName The name of the script in the resource directory.
      * @return A Map object of the parsed JSON.
      */
-    static Map callAndReturnJson(String scriptName) {
-        def jsonOutput = ""
+    Map callAndReturnJson(String scriptName) {
+        String jsonOutput = ''
 
         try {
-
-           // Read the file and place it in the workspace as an executable.
+            // Read the file and place it in the workspace as an executable.
             script = copyGlobalLibraryScript(scriptName)
 
             // Run it, returning the output.
@@ -56,11 +58,12 @@ abstract class UtilityBaseClass implements Serializable {
             ).trim()
 
             // Parse it
-            def parsedJson = readJSON text: jsonOutput
+            Map parsedJson = readJSON(text: jsonOutput)
 
             return parsedJson
-        } catch (Exception e) {
+        } catch (e) {
             error("Failed to parse JSON: ${e.message}. Raw output: ${jsonOutput}")
         }
     }
+
 }
