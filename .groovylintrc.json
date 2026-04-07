@@ -1,8 +1,9 @@
 {
-    "extends": "recommended",
-    "rules": {
-        "UnnecessaryGetter": "off",
-        "UnnecessarySetter": "off",
-        "JavaIoPackageAccess": "off"
-    }
+  "extends": "recommended",
+  "rules": {
+    "UnnecessaryGetter": "off",
+    "UnnecessarySetter": "off",
+    "JavaIoPackageAccess": "off",
+    "ClassEndsWithBlankLine": "off"
+  }
 }
