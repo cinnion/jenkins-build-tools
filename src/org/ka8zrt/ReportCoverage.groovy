@@ -9,12 +9,22 @@ import groovy.transform.CompileDynamic
  * settings specific to this class.
  */
 @CompileDynamic
-class ReportCoverage extends UtilityBase {
+class ReportCoverage {
 
     static String LINE_METRIC = 'line'
     static String BRANCH_METRIC = 'branch'
     static String PERCENT_FORMAT = '%.2f%%'
     static int TO_PERCENT = 100
+    static def script
+
+    class Configuration {
+        String coverage_file = 'coverage.xml'
+        int fail_under = 60
+        String fail_color = 'red'
+        int warn_under = 80
+        String warn_color = 'orange'
+        String pass_color = 'green'
+    }
 
     /**
      * Constructor for the class. We save the script parameter for accessing methods like error, sh and such.
@@ -22,7 +32,21 @@ class ReportCoverage extends UtilityBase {
      * @param script The Jenkins instance
      */
     ReportCoverage(Script script) {
-        super(script)
+        this.script = script
+    }
+
+    /**
+     * Read our language specific project configuration file and return the settings found in it.
+     *
+     * @return Configuration object.
+     */
+    Configuration readSettings() {
+        try {
+            Map allSettings = this.script.readTOML(file: 'pyproject.toml')
+            return allSettings.tool['ReportCoverage'] as Configuration
+        } catch (e) {
+            this.script.error("Error trying to read and save settings from 'pyproject.toml' - ${e}")
+        }
     }
 
     /**
@@ -33,7 +57,7 @@ class ReportCoverage extends UtilityBase {
      * @return The value as a string, which can then be converted by the
      *         caller to whatever type is needed.
      */
-    String getCoverageValueAsString(String coverageFile, String key) {
+    static String getCoverageValueAsString(String coverageFile, String key) {
         try {
             String value = this.script.sh(script: "xmllint --xpath 'string(//coverage/@${key})' ${coverageFile}",
                     returnStdout: true).trim()
@@ -68,16 +92,16 @@ class ReportCoverage extends UtilityBase {
             }
 
             // Read our settings.
-            Map settingsJson = callAndReturnJson('readConfigSettings.py')
+            Configuration settings = readSettings()
 
             // Read our values
-            // int linesValid = getCoverageValueAsString(settingsJson.coverage_file, 'lines-valid') as int
-            // int linesCovered = getCoverageValueAsString(settingsJson.coverage_file, 'lines-covered') as int
-            BigDecimal lineRate = getCoverageValueAsString(settingsJson.coverage_file as String, 'line-rate').toBigDecimal()
-            // int branchedValid = getCoverageValueAsString(settingsJson.coverage_file, 'branches-valid') as int
-            // int branchesCovered = getCoverageValueAsString(settingsJson.coverage_file, 'branches-covered') as int
-            BigDecimal branchRate = getCoverageValueAsString(settingsJson.coverage_file as String, 'branch-rate').toBigDecimal()
-            // int complexity = getCoverageValueAsString(settingsJson.coverage_file, 'complexity') as int
+            // int linesValid = getCoverageValueAsString(settings.coverage_file, 'lines-valid') as int
+            // int linesCovered = getCoverageValueAsString(settings.coverage_file, 'lines-covered') as int
+            BigDecimal lineRate = getCoverageValueAsString(settings.coverage_file as String, 'line-rate').toBigDecimal()
+            // int branchedValid = getCoverageValueAsString(settings.coverage_file, 'branches-valid') as int
+            // int branchesCovered = getCoverageValueAsString(settings.coverage_file, 'branches-covered') as int
+            BigDecimal branchRate = getCoverageValueAsString(settings.coverage_file as String, 'branch-rate').toBigDecimal()
+            // int complexity = getCoverageValueAsString(settings.coverage_file, 'complexity') as int
 
             // Set our status to the percentage.
             if (metric == LINE_METRIC) {
@@ -87,12 +111,12 @@ class ReportCoverage extends UtilityBase {
             }
 
             // Look at our lineRate and figure out whether we are warning or failing.
-            if (lineRate * TO_PERCENT < (settingsJson.fail_under as BigDecimal)) {
-                badge.setColor(settingsJson.fail_color)
-            } else if (lineRate * TO_PERCENT < (settingsJson.warn_under as BigDecimal)) {
-                badge.setColor(settingsJson.warn_color)
+            if (lineRate * TO_PERCENT < (settings.fail_under as BigDecimal)) {
+                badge.setColor(settings.fail_color)
+            } else if (lineRate * TO_PERCENT < (settings.warn_under as BigDecimal)) {
+                badge.setColor(settings.warn_color)
             } else {
-                badge.setColor(settingsJson.pass_color)
+                badge.setColor(settings.pass_color)
             }
         } catch (e) {
             this.script.error("An error occurred in reportCoveragePercent - ${e}")
