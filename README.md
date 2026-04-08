@@ -1,4 +1,4 @@
-# Jenkins Build Tools Library
+# Jenkins Python Build Tools Library
 
 A set of shared pipeline functions and a Python utility for use by Jenkins build jobs, for use with
 the Jenkins [Embeddable Build Status](https://plugins.jenkins.io/embeddable-build-status/) plugin.
@@ -7,43 +7,58 @@ the Jenkins [Embeddable Build Status](https://plugins.jenkins.io/embeddable-buil
 
 <!---toc start-->
 
-* [Jenkins Build Tools Library](#jenkins-build-tools-library)
+* [Jenkins Python Build Tools Library](#jenkins-python-build-tools-library)
+* [Overview](#overview)
 * [Requirements](#requirements)
 * [Installation](#installation)
 * [Provided functions](#provided-functions)
-  * [reportCoveragePercent()](#reportcoveragepercent)
-    * [Usage in a Jenkinsfile](#usage-in-a-jenkinsfile)
-      * [Option A: Static Import (Recommended)](#option-a-static-import-recommended)
-      * [Option B: Dynamic Loading](#option-b-dynamic-loading)
-  * [reportCoverageLinePercent()](#reportcoveragelinepercent)
-  * [reportCoverageBranchPercent()](#reportcoveragebranchpercent)
-    * [Auxiliary utility methods](#auxiliary-utility-methods)
-      * [createTempLocation()](#createtemplocation)
-      * [copyGlobalLibraryScript()](#copygloballibraryscript)
-      * [callAndReturnJson()](#callandreturnjson)
+    * [Build functions](#build-functions)
+        * [runBuild()](#runbuild)
+        * [runTestsWithCoverage()](#runtestswithcoverage)
+    * [Build Status Extensions](#build-status-extensions)
+        * [reportCoveragePercent()](#reportcoveragepercent)
+        * [reportCoverageLinePercent()](#reportcoveragelinepercent)
+        * [reportCoverageBranchPercent()](#reportcoveragebranchpercent)
+* [Usage in a Jenkinsfile](#usage-in-a-jenkinsfile)
+    * [Option A: Static Import (Recommended)](#option-a-static-import-recommended)
+    * [Option B: Dynamic Loading](#option-b-dynamic-loading)
+    * [Other methods](#other-methods)
+* [Seeing it in action](#seeing-it-in-action)
+* [Thanks](#thanks)
 
 <!---toc end-->
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
+# Overview
+
+This project is primarily intended for Python projects for now, but will eventually also support PHP. As such,
+it presently relies on the presence of a `pyproject.toml` file in the root directory of the project, since that file
+format has become the standardized configuration file for Python projects, having replace `requirements.txt` due to its
+superior nature over the latter. When PHP support is added, it will make use of the `composer.json` file's `extra` field
+to store its configuration overrides, but that is for a future release.
+
+For now, this library is largely comprised of two major areas of functionality. These are:
+
+- Standardized build/test functions, to be called from the Jenkinsfile to perform those actions.
+- A set of functions for handling updating the badges created by
+  the [Embeddable Build Status](https://plugins.jenkins.io/embeddable-build-status/) Jenkins plugin.
 
 # Requirements
 
-To parse the `pyproject.toml` file of a project, this library makes use of the
-default Python 3 version found in the search path as `python3`, and needs the
-following packages installed (follow the instructions on each of those pages to
-install them):
+This library is dependent upon the following Jenkins plugins:
 
-- [tomli](https://pypi.org/project/tomli/) for Python versions less than 3.11 or
-- [tomllib](https://docs.python.org/3/library/tomllib.html) for Python 3.11 and later
-
-All other Python libraries used should be automatically installed for any
-supported Python version.
-
-It also requires the `xmllint` utility, which is available as a part of the
-`libxml2` package on EL9 based systems, and similar packages on other distros.
+- The [Pipeline Utility Steps](https://plugins.jenkins.io/pipeline-utility-steps/) plugin. An earlier version
+  of this library needed it to have the `readJSON()` function so that a Python utility could easily send the
+  configuration values from the `pyproject.toml` file, but now, it has replaced that with a simpler call to `readYAML()`
+  to read that information directly into the Groovy scripts.
+- The [Embeddable Build Status](https://plugins.jenkins.io/embeddable-build-status/) plugin, but only if you wish to
+  make use of that functionality.
 
 # Installation
+
+These instructions are mostly a rehash of the Jenkins
+documentation [here](https://www.jenkins.io/doc/book/pipeline/shared-libraries/).
 
 To install this library, as an administrator, go to **Manage Jenkins** -> **System** -> **Global Trusted Pipeline
 Libraries** or **Manage Jenkins** -> **System** -> **Global Unrusted Pipeline Libraries**, and fill in the **Name**,
@@ -53,19 +68,76 @@ as well as selecting the other settings as you choose.
 
 Here, you can see how it looks on my system:
 
-![Screenshot](src/doc/screenshot.png)
+<img src="src/doc/screenshot.png" width="50%">
 
 # Provided functions
 
-## reportCoveragePercent()
+Currently, the functions are broken down into two categories, which are:
 
-The `reportCoveragePercent()` method is designed to work with an embeddable build status badge produced
-by the Jenkins [Embeddable Build Status](https://plugins.jenkins.io/embeddable-build-status/) plugin.
-It is the core method of this library, taking the badge and an optional value of `line` or `branch` (defaulting to
-`line`). From there, it reads the `coverage.xml` file produced by the Python
-[coverage](https://coverage.readthedocs.io/) tool and makes the calls to set the status string and color of the
-badge according to settings configured in the project's `pyproject.toml` file. The settings can be set using the
-following block in the file (which shows the default values):
+- [Build Functions](#build-functions)
+- [Build Status extensions](#build-status-extensions)
+
+## Build functions
+
+The build functions are designed to work with a common configuration defined in the `Jenkinsfile`, to perform a
+standardized way to build a containerized application and run its tests using `docker compose`. It expects the project
+to have a `docker-compose.yml` file at the root of the project, with the production build products being generated by
+default, and the test container named `tester` to be built when a profile of `testing` and that container is named
+on the build and run commands.
+
+To integrate with multiple projects and their configuration files, the `Jenkinsfile` needs to have a configuration
+defined to provide a few items. The configuration looks something like this:
+
+```jenkins
+def project_config = [
+    "project_name": "job-application-tracker",
+    "project_env": "job-application-tracker-env"
+]
+```
+
+The `project_name` value is passed to the `docker compose` commands using the `-p` (`--profile-name`) argument, as
+described [here](https://docs.docker.com/reference/cli/docker/compose/).
+
+The `project_env` argument is the name of a `.env` file stored using
+Jenkins' [Credentials](https://www.jenkins.io/doc/book/using/using-credentials/)
+system. This file is placed at the root directory of the project, and the `Dockerfile` for the `tester` container will
+load this into the container for use by the application.
+
+The current functions are:
+
+### runBuild()
+
+The `runBuild()` function is the one which does the lifting for the building of the production containers which are to
+be deployed. This is built with a `docker compose build` command.
+
+### runTestsWithCoverage()
+
+Since it seems wasteful to run first one run of whatever testing the application has, and then rerun the same tests
+to collect coverage details, this command goes for an "all at once" approach. Rather than rely on information in the
+`Jenkinsfile`, this function relies on the `docker-compose.yml` file to define an "optional" service named `tester` and
+to have a profile of `testing`, and the exact commands to be run either defined on the service definition in the
+composer file, or in the `Dockerfile` itself for the build target specified by the composer service entry.
+
+## Build Status Extensions
+
+The build status extensions are intended to allow easier customization of badges produced by the
+[Embeddable Build Status](https://plugins.jenkins.io/embeddable-build-status/) plugin. Since the plugin mostly relied on
+configuration stored in the `Jenkinsfile`, and
+having no way to inject the desired code coverage metric into the badge, in spite of having the
+[Coverage](https://plugins.jenkins.io/coverage/) plugin installed. It's quality gates work great for pass/warn/fail,
+but there is no way to get the metric out of the plugin, so we are forced to reparse the coverage results. And that
+is where these functions come into play. And in reality, all these functions are wrappers for a class having similar
+method names, which are called by instantiating that class and calling the corresponding method.
+
+Regarding the coverage file, it is expected to be a [Cobertura](https://cobertura.github.io/cobertura/) format file,
+which is the native XML format produced by tools such as Python's [coverage](https://coverage.readthedocs.io/en/7.13.5/)
+module, or the [pytest-cov](https://pypi.org/project/pytest-cov/) module. Since neither of these produce reports on
+statistics on [cyclomatic complexity](https://en.wikipedia.org/wiki/Cyclomatic_complexity) like PHP's
+[PHPUnit](https://docs.phpunit.de/en/12.5/index.html) does, no functionality has been added for supporting that... yet.
+
+These functions store their configuration in the `pyproject.toml` file (support for PHP and its `composer.json` file
+is coming in the future), and that configuration block looks something like this (which shows the default values used
+if they are not specified):
 
 ```toml
 [tools.ReportCoverage]
@@ -77,22 +149,42 @@ warn_color = "orange"
 pass_color = "green"
 ```
 
-**NOTE**: Do not call this method or the others unless you have a `pyproject.toml` file, as while it will generate the
-expected results without setting the values in the file, the failure to find the file or parse it is considered an
-error.
+While there is no configuration support for differentiating `LINE` vs `BRANCH` metrics, the library does support the
+ability to report the percentage of one or the other.
 
-### Usage in a Jenkinsfile
+The current functions are:
 
-To use this method, or any of the others, you basically have two choices, based on the loading style desired. As all 
-methods for this utility class are `static`, there is no need to instantiate the class, and you only need specify the 
-class name and method.
+### reportCoveragePercent()
 
-#### Option A: Static Import (Recommended)
+The `reportCoveragePercent()` requires only a single argument, that being the badge variable returned by the
+`addEmbeddableBadgeConfiguration()` call. However, an optional argument can be supplied with either `line` or `branch`
+to say which metric you wish to use. Based on the value read from either the `line-rate` or `branch-rate` attribute in
+the coverage file, the thresholds are applied and the color set accordingly while also adding the percentage to the
+badge.
+
+### reportCoverageLinePercent()
+
+The `reportCoverageLinePercent()` function is just a convenience wrapper around the same class method called by
+`reportCoveragePercent(), but explicitly giving the value to indicate that the line metric is to be used. This
+guarantees that the result will remain the same, even if some other metric is added or the default changes.
+
+### reportCoverageBranchPercent()
+
+The `reportCoverageLinePercent()` function is just a convenience wrapper around the same class method called by
+`reportCoveragePercent(), explicitly giving the value to indicate that the line metric is to be used. This guarantees
+that the result will remain the same, even if some other metric is added or the default changes.
+
+# Usage in a Jenkinsfile
+
+Regardless of the method, you use them in much the same way. And you basically have two choices,
+based on the loading style desired.
+
+## Option A: Static Import (Recommended)
 
 Use the `@Library` annotation followed by a standard Groovy import.
 
 ```jenkins
-@Library('python-coverage-library')
+@Library('python-coverage-library') _
 import org.ka8zrt.ReportCoverage
 
 def myCoverageBadge = addEmbeddableBadgeConfiguration(id: "myCoverageBadge", subject: "Line Coverage")
@@ -103,18 +195,22 @@ pipeline {
         stage('Example') {
             script {
                 // Call static method directly.
-                ReportCoverage.reportCoveragePercent(myCoverageBadge, "line")
+                reportCoveragePercent(myCoverageBadge, "line")
             }
         }
     }
 }
 ```
 
-That is all there is to it.any
+That is all there is to it.
 
-#### Option B: Dynamic Loading
+## Option B: Dynamic Loading
 
-If you load the library at runtime using the `library` step, you access static methods via the returned library object.
+If you load the library at runtime using the `library` step, you access methods via the returned library object.
+
+[!NOTE]
+I cannot guarantee the exact syntax used here. I strictly use static loading. If you find it does not work as I have
+indicated, please let me know, and I will happily update the documentation.
 
 ```jenkins
 script {
@@ -130,7 +226,7 @@ script {
     try {
         myCoverageBadge.setStatus('running') // Update status at start
         // ... build steps ...
-        myLib.org.ka8zrt.ReportCoverage.reportCoveragePercent(myCoverageBadge)
+        reportCoveragePercent(myCoverageBadge)
     } catch (Exception e) {
         myCoverageBadge.setStatus('failing')
         throw e
@@ -138,32 +234,34 @@ script {
 }
 ```
 
-## reportCoverageLinePercent()
+## Other methods
 
-This method is merely a wrapper for the `reportCoveragePercent()` method, which takes just the badge as an argument and
-explicitly specifies the `line` metric. It is provided as a convenience method which guarantees that any future change
-to `reportCoveragePercent()` will continue to work with line metrics.
+While if you somehow found and tried to use one of the earliest revisions of this library, I will note here that the
+`UtilityBase` class has gone away. Good riddance! When I found that the Pipeline Utility Steps plugin was actually
+required to get the `readJSON()` method I kept seeing when researching how to do this shared library, I noticed that
+there is also a `readTOML()` function which totally removes the need for a utility written in Python to read the
+`pyproject.toml` file to get the configuration overrides. And like any good programmer, I am a firm believer in the
+KISS principle. That class was solely created to do one thing, and one thing only, and also being a follower of the
+Single-responsibility principle and reusability, I separated that code out as a base class for future reuse. I may go
+back and resurrect that code in the future if I find I need it, but for now...
 
-## reportCoverageBranchPercent()
+# Seeing it in action
 
-This method, like `reportCoverageLinePercent()`, is a wrapper for the `reportCoveragePercent()` method, but instead
-explicitly specifies the `branch` metric.
+If you wish to see it in action, just take a look at
+my [Job Application Tracker](https://github.com/cinnion/job-application-tracker)
+app written in Python and Django. There, you will find a `Jenkinsfile`, `docker-compose.yml` and docker configurations
+which build and release a containerized application.
 
-### Auxiliary utility methods
+# Thanks
 
-The following methods are generic utility methods used by this library.
+While not directly involved in either this or the Job Application Tracker, I would like to thank my long-time friend
+[Dave Weiner](https://github.com/dweinerATL), with whom I have and do work on a number of projects with. He is the one
+who suggested I take the Job Application Tracker from a single user application I threw together quick and dirty to do
+for me what Google Spreadsheets was not. And while like him, I could have probably done some of these things using
+GitHub actions, Jenkins is something I learned to use in a previous job, and I quickly set up my own server to keep
+those skills active.
 
-#### createTempLocation()
-
-This method takes a string path parameter, and returns a temporary location for holding a script in the workspace for
-execution.
-
-#### copyGlobalLibraryScript()
-
-This method takes a resource source path and an optional destination path, and returns the path to the file, copied
-to its destination (by default, a temporary location), with permissions set so that the file is executable.
-
-#### callAndReturnJson()
-
-This method takes a script name and copies it from the resource library to a temporary location, executes it, and parses
-the output as JSON to be returned as a Groovy map object.
+Also, my thanks to the maintainer of [DocToc](https://github.com/ktechhub/doctoc). While I found their injection of
+a link to their project a bit too glaring for inclusion in the head of my project, I still want to visibly thank them
+for the tool with which I generate my table of contents, even if it does keep sticking that link in there, rather than
+detecting a prior run, and just updating the table of contents.
